@@ -931,7 +931,20 @@ end function aa:GetVersion()return self.Version end function aa:IsMobileDevice()
 return b.TouchEnabled end function aa:IsConsoleDevice()return b.GamepadEnabled
 end function aa:GetScreenSize()return workspace.CurrentCamera.ViewportSize end
 function aa:LoadPrefabs()
-    local g, h = self.PlayerGui, 'ReGui-Prefabs'
+    local playerGui = self.PlayerGui
+    local prefabName = 'ReGui-Prefabs'
+
+    local function safeIndex(object, key)
+        if object == nil then
+            return nil
+        end
+
+        local ok, value = pcall(function()
+            return object[key]
+        end)
+
+        return ok and value or nil
+    end
 
     local function getChild(parent, name, timeout)
         if parent == nil then
@@ -939,28 +952,24 @@ function aa:LoadPrefabs()
         end
 
         if typeof(parent) == 'Instance' then
-            local ok, result = pcall(function()
+            local ok, child = pcall(function()
                 return parent:WaitForChild(name, timeout)
             end)
-            return ok and result or nil
+            return ok and child or nil
         end
 
         if type(parent) == 'table' then
-            local ok, result = pcall(function()
-                return parent[name]
-            end)
-            if ok and result ~= nil then
-                return result
+            local child = safeIndex(parent, name)
+            if child ~= nil then
+                return child
             end
 
             for _, methodName in ipairs({'FindFirstChild', 'WaitForChild'}) do
-                local methodOk, method = pcall(function()
-                    return parent[methodName]
-                end)
-                if methodOk and type(method) == 'function' then
-                    local callOk, child = pcall(method, parent, name, timeout)
-                    if callOk and child ~= nil then
-                        return child
+                local method = safeIndex(parent, methodName)
+                if type(method) == 'function' then
+                    local ok, result = pcall(method, parent, name, timeout)
+                    if ok and result ~= nil then
+                        return result
                     end
                 end
             end
@@ -969,14 +978,49 @@ function aa:LoadPrefabs()
         return nil
     end
 
-    local i = getChild(script, h, 2)
-    if i ~= nil then
-        return i
+    local function isPrefabRoot(candidate)
+        if candidate == nil then
+            return false
+        end
+
+        -- The original ReGui layout is a root object containing a child
+        -- named "Prefabs". Some table-based loaders expose that root directly.
+        if safeIndex(candidate, 'Prefabs') ~= nil then
+            return true
+        end
+
+        -- Also accept a prefab folder/table directly, with Container,
+        -- ResizeGrab, and other prefab entries as its children.
+        if getChild(candidate, 'Container', 0) ~= nil then
+            return true
+        end
+
+        return false
     end
 
-    return getChild(g, h, 2)
-end
+    -- If script is a module-like table, it may already be the prefab root.
+    if type(script) == 'table' and isPrefabRoot(script) then
+        return script
+    end
 
+    local fromScript = getChild(script, prefabName, 2)
+    if isPrefabRoot(fromScript) then
+        return fromScript
+    end
+
+    -- PlayerGui is the fallback used by the original library.
+    local fromPlayerGui = getChild(playerGui, prefabName, 2)
+    if isPrefabRoot(fromPlayerGui) then
+        return fromPlayerGui
+    end
+
+    -- Some callers pass the Prefabs folder itself rather than its wrapper.
+    if isPrefabRoot(playerGui) then
+        return playerGui
+    end
+
+    return nil
+end
 function aa:CheckConfig(g,h,i,m)return ad:
 CheckConfig(g,h,i,m)end function aa:CreateInstance(g,h,i)local m=Instance.new(g,
 h)if i then local n=i.UsePropertiesList if not n then self:SetProperties(m,i)
@@ -1082,10 +1126,48 @@ local q,r,s,t=p.Properties,p.Callback,p.Recursive,p.WindowProperties local u=
 self:GetValueFromAliases(q,m)if n and t and u==nil then u=self:
 GetValueFromAliases(t,n)end if u==nil then continue end r(g,i,u)if s then self:
 RecursiveCall(i,function(v)r(g,v,u)end)end end end function aa:SetProperties(g,h
-)return ad:SetProperties(g,h)end function aa:InsertPrefab(g,h)local i=self.
-Prefabs local m=i.Prefabs local n=ad:NewReference(m:WaitForChild(g):Clone())if h
-then local o=h.UsePropertiesList if not o then self:SetProperties(n,h)else self:
-ApplyFlags{Object=n,Class=h}end end return n end function aa:GetContentSize(g,h)
+)return ad:SetProperties(g,h)end function aa:InsertPrefab(name, properties)
+    local prefabRoot = self.Prefabs
+    assert(prefabRoot ~= nil, 'ReGui prefab root is missing. Pass a script table containing Prefabs or a ReGui-Prefabs folder.')
+
+    local prefabFolder = prefabRoot.Prefabs or prefabRoot
+    assert(prefabFolder ~= nil, 'ReGui prefab folder is missing.')
+
+    local prefab
+    if typeof(prefabFolder) == 'Instance' then
+        prefab = prefabFolder:WaitForChild(name, 2)
+    elseif type(prefabFolder) == 'table' then
+        prefab = prefabFolder[name]
+
+        if prefab == nil and type(prefabFolder.FindFirstChild) == 'function' then
+            local ok, result = pcall(prefabFolder.FindFirstChild, prefabFolder, name)
+            if ok then
+                prefab = result
+            end
+        end
+
+        if prefab == nil and type(prefabFolder.WaitForChild) == 'function' then
+            local ok, result = pcall(prefabFolder.WaitForChild, prefabFolder, name, 2)
+            if ok then
+                prefab = result
+            end
+        end
+    end
+
+    assert(prefab ~= nil, `ReGui prefab '{name}' was not found. Check that it exists inside the Prefabs folder.`)
+    assert(typeof(prefab) == 'Instance', `ReGui prefab '{name}' must be an Instance so it can be cloned.`)
+
+    local object = ad:NewReference(prefab:Clone())
+    if properties then
+        if not properties.UsePropertiesList then
+            self:SetProperties(object, properties)
+        else
+            self:ApplyFlags{Object = object, Class = properties}
+        end
+    end
+
+    return object
+end function aa:GetContentSize(g,h)
 local i,m,n,o=g:FindFirstChildOfClass'UIListLayout',g:FindFirstChildOfClass
 'UIPadding',(g:FindFirstChildOfClass'UIStroke')if i and not h then o=i.
 AbsoluteContentSize else o=g.AbsoluteSize end if m then local p,q,r,s=m.
