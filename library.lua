@@ -930,9 +930,54 @@ return ad:NewReference(d:LoadLocalAsset(h))end)self:Init{Prefabs=i and m or nil}
 end function aa:GetVersion()return self.Version end function aa:IsMobileDevice()
 return b.TouchEnabled end function aa:IsConsoleDevice()return b.GamepadEnabled
 end function aa:GetScreenSize()return workspace.CurrentCamera.ViewportSize end
-function aa:LoadPrefabs()local g,h=self.PlayerGui,'ReGui-Prefabs'local i=script:
-WaitForChild(h,2)if i then return i end local m=g:WaitForChild(h,2)if m then
-return m end return nil end function aa:CheckConfig(g,h,i,m)return ad:
+function aa:LoadPrefabs()
+    local g, h = self.PlayerGui, 'ReGui-Prefabs'
+
+    local function getChild(parent, name, timeout)
+        if parent == nil then
+            return nil
+        end
+
+        if typeof(parent) == 'Instance' then
+            local ok, result = pcall(function()
+                return parent:WaitForChild(name, timeout)
+            end)
+            return ok and result or nil
+        end
+
+        if type(parent) == 'table' then
+            local ok, result = pcall(function()
+                return parent[name]
+            end)
+            if ok and result ~= nil then
+                return result
+            end
+
+            for _, methodName in ipairs({'FindFirstChild', 'WaitForChild'}) do
+                local methodOk, method = pcall(function()
+                    return parent[methodName]
+                end)
+                if methodOk and type(method) == 'function' then
+                    local callOk, child = pcall(method, parent, name, timeout)
+                    if callOk and child ~= nil then
+                        return child
+                    end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local i = getChild(script, h, 2)
+    if i ~= nil then
+        return i
+    end
+
+    return getChild(g, h, 2)
+end
+
+function aa:CheckConfig(g,h,i,m)return ad:
 CheckConfig(g,h,i,m)end function aa:CreateInstance(g,h,i)local m=Instance.new(g,
 h)if i then local n=i.UsePropertiesList if not n then self:SetProperties(m,i)
 else self:ApplyFlags{Object=m,Class=i}end end return m end function aa:
