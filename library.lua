@@ -910,13 +910,45 @@ function aa:Error(...)local g=aa:Concat({...},' ')local h=`\n[ReGui]:: {g}`
 coroutine.wrap(error)(h)end function aa:IsDoubleClick(g)local h=self.
 DoubleClickThreshold return g<h end function aa:StyleContainers()local g=self.
 Container local h,i=g.Overlays,g.Windows self:SetProperties(i,{OnTopOfCoreBlur=
-true})self:SetProperties(h,{OnTopOfCoreBlur=true})end function aa:Init(g)g=g or{
-}if self.Initialised then return end Merge(self,g)Merge(self,{Initialised=true,
-HasGamepad=self:IsConsoleDevice(),HasTouchScreen=self:IsMobileDevice()})self:
-CheckConfig(self,{ContainerParent=function()return ad:ResolveUIParent()end,
-Prefabs=function()return self:LoadPrefabs()end},true)self:CheckConfig(self,{
-Container=function()return self:InsertPrefab('Container',{Parent=self.
-ContainerParent,Name=self.ContainerName})end},true)local h,i,m=self.Container,
+true})self:SetProperties(h,{OnTopOfCoreBlur=true})end function aa:Init(g)
+    g = g or {}
+    if self.Initialised then return end
+
+    Merge(self, g)
+
+    -- Resolve prefabs before CheckConfig. Passing Prefabs = nil from an import
+    -- path must not prevent the normal script-table/PlayerGui fallback.
+    if self.Prefabs == nil then
+        local ok, prefabs = pcall(function()
+            return self:LoadPrefabs()
+        end)
+        if ok and prefabs ~= nil then
+            self.Prefabs = prefabs
+        end
+    end
+
+    Merge(self, {
+        Initialised = true,
+        HasGamepad = self:IsConsoleDevice(),
+        HasTouchScreen = self:IsMobileDevice()
+    })
+
+    self:CheckConfig(self, {
+        ContainerParent = function() return ad:ResolveUIParent() end,
+        Prefabs = function() return self.Prefabs or self:LoadPrefabs() end
+    }, true)
+
+    assert(self.Prefabs ~= nil,
+        "ReGui could not resolve prefabs. Supply Init({Prefabs = prefabRoot}) or make script.Prefabs / script ReGui-Prefabs available.")
+
+    self:CheckConfig(self, {
+        Container = function()
+            return self:InsertPrefab('Container', {
+                Parent = self.ContainerParent,
+                Name = self.ContainerName
+            })
+        end
+    }, true)local h,i,m=self.Container,
 self.TooltipOffset,self.ActiveTooltips local n,o=h.Overlays,0 self:
 StyleContainers()self.TooltipsContainer=self.Elements:Overlay{Parent=n}b.
 InputBegan:Connect(function(p)if not self:IsMouseEvent(p,true)then return end
@@ -924,9 +956,31 @@ local q=tick()local r=q-o local s=self:IsDoubleClick(r)o=s and 0 or q self:
 UpdateWindowFocuses()end)local p=function()local p,q=self.TooltipsContainer,#m>0
 p.Visible=q if not q then return end local r,s=aa:GetMouseLocation()local t=n.
 AbsolutePosition p.Position=UDim2.fromOffset(r-t.X+i,s-t.Y+i)end c.RenderStepped
-:Connect(p)end function aa:CheckImportState()if self.Initialised then return end
-local g=self.PrefabsId local h=ad:CheckAssetUrl(g)local i,m=pcall(function()
-return ad:NewReference(d:LoadLocalAsset(h))end)self:Init{Prefabs=i and m or nil}
+:Connect(p)end function aa:CheckImportState()
+    if self.Initialised then return end
+
+    local importedPrefabs
+    local okUrl, assetUrl = pcall(function()
+        return ad:CheckAssetUrl(self.PrefabsId)
+    end)
+
+    if okUrl and assetUrl then
+        local okAsset, asset = pcall(function()
+            return d:LoadLocalAsset(assetUrl)
+        end)
+        if okAsset and asset ~= nil then
+            local okReference, reference = pcall(function()
+                return ad:NewReference(asset)
+            end)
+            if okReference and reference ~= nil then
+                importedPrefabs = reference
+            end
+        end
+    end
+
+    -- Do not explicitly pass Prefabs = nil: let Init resolve the supplied
+    -- script table or the ReGui-Prefabs folder when local asset loading fails.
+    self:Init(importedPrefabs and { Prefabs = importedPrefabs } or {})
 end function aa:GetVersion()return self.Version end function aa:IsMobileDevice()
 return b.TouchEnabled end function aa:IsConsoleDevice()return b.GamepadEnabled
 end function aa:GetScreenSize()return workspace.CurrentCamera.ViewportSize end
